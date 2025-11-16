@@ -1,103 +1,201 @@
-// MP3 Tag Reader //
+*************************************************************************************************************************************************
+LSB Steganography
 
-1. Creates a new file named "new_file.mp3" for writing the updated content.
-2. Checks if the input file (fptr) is opened properly.
+1. Overview
+    This project is an LSB (Least Significant Bit) Steganography.
 
-    i>. EDIT
-        Defines an array of tag frame identifiers corresponding to common ID3v2 metadata fields
-            1	"TIT2"	Title
-            2	"TPE1"	Artist
-            3	"TALB"	Album
-            4	"TYER"	Year
-            5	"TCON"	Genre/Content
-            6	"TCOM"	Composer
+    ENCODE :
+        The encoding process hides a secret file inside a BMP image by modifying the least significant bits (LSBs) of the image’s pixel data.
+        The output is a stego image, which looks visually identical to the original image but contains hidden data.
 
-            1.  't' → Title (TIT2)
-                    Edits the Title of the MP3 track.
-                    Searches for the TIT2 frame and replaces its content.
-                    Useful to update or correct the song title.
+    DECODE :
+        It extracts hidden data from a stego BMP image that was created by an encoding process.
+        It supports reading:
+            Magic string (to verify correct file)
+            Secret file extension
+            Secret file size
+            Secret file data
+        Then it writes the recovered data into an output file with the proper extension.
 
-            2.  'a' → Artist (TPE1)
-                    Edits the Artist name of the song.
-                    Searches for the TPE1 frame and updates it with new artist info.
-                    Helps assign correct artist metadata.
+2. main.c
+    Handles command-line arguments and determines the operation:
+        ->  -e → Encoding
+        ->  -d → Decoding
 
-            3.  'A' → Album (TALB)
-                    Edits the Album name of the track.
-                    Searches for the TALB frame and writes new album information.
-                    Helps organize songs by album in music players.
+    i). If encoding is selected:
+            ->  Validates arguments using read_and_validate_encode_args().
+            ->  Calls do_encoding() to extract the hidden data.
+            ->  Prints success/failure messages accordingly.
 
-            4.  'y' → Year (TYER)
-                    Edits the Year the song was released.
-                    Locates the TYER frame and replaces it.
-                    Useful for cataloging music chronologically.
+    ii). If decoding is selected:
+            ->  Validates arguments using read_and_validate_decode_args().
+            ->  Calls do_decoding() to extract the hidden data.
+            ->  Prints success/failure messages accordingly.
+3. encode.h
 
-            5.  'c' → Genre (TCON)
-                    Edits the Genre of the track.
-                    Finds the TCON frame and updates its content.
-                    Helps group music by genre (e.g., Rock, Pop).
+    Defines:
+        ->  EncodeInfo struct → Stores:
+        ->  Input source image filename & file pointer
+        ->  Secret filename & file pointer
+        ->  Output file name (with appended extension)
+        ->  Magic string
+        ->  Secret file extension & size
+        ->  Secret file size
 
-            6.  'm' → Composer (TCOM)
-                    Edits the Composer of the song.
-                    Locates the TCOM frame and updates the name.
-                    Useful for classical or instrumental music metadata.
+    Function prototypes for all decoding steps:
+            ->  Reading & validating arguments
+            ->  Opening files
+            ->  Check capacity
+            ->  Copying BMP header
+            ->  Encoding magic string length & data
+            ->  Encoding file extension length & extension
+            ->  Encoding file size
+            ->  Encoding file data (and writing to output file)
+            ->  Copy remaining file data.
 
-    ii>.    copy(...)
-                This function handles the actual replacement of metadata in the MP3 file. It:
-                Locates the position of the target frame using the search() function.
-                Copies everything from the original MP3 file to a new file, except the old content of the specified frame.
-                Writes the new content into the appropriate frame, then copies the rest of the original file.
-                Replaces the original MP3 with the new one and displays the updated metadata.
 
-    iii>.   view(...)
-                This function displays the values of standard ID3v2 tags such as Title, Artist, Album, Year, Genre, and Composer. It:
-                Iterates over a predefined list of frame identifiers.
-                Calls search() to get the content for each frame.
-                Prints the tag name and its content in box. If found.
+4. encode.c
 
-    iv>.    swap(...)
-                This function performs a 4-byte endianness conversion, swapping bytes to convert between little-endian and big-endian formats. 
-                This is necessary because the size values in ID3v2 frames are stored in big-endian format, but most systems read integers in little-endian.
+    Encoding Steps
+        1.  Read and Validate Arguments
+                ->  Confirms that the source image is a .bmp.
+                ->  Confirms that the secret file exists.
+                ->  Creates or opens output stego image.
+        2.  Open Files
+                ->  Opens source image (read mode).
+                ->  Opens secret file (read mode).
+                ->  Opens stego image (write mode).
+        3.  Check capacity
+                ->  Get the source file size.
+                ->  Get the secret file size and data.
+                ->  Get the magic string length and data.
+                ->  Calculate wheather the encoding file capacity is less than or equal to (source file size - 54).
+        3.  Copy BMP Header
+                ->  Copies first 54 bytes (header) from source image to stego image unchanged.
+        4.  Encode Magic String Length
+                ->  Calculates length of predefined magic string.
+                ->  Stores its length in 32 LSBs of the next 32 image bytes.
+        5.  Encode Magic String
+                ->  Stores each character’s ASCII value, 1 bit at a time, into 8 image bytes.
+        6.  Encode Secret File Extension Length
+                ->  Reads extension length (e.g., ".txt" → 4).
+                ->  Stores length using 32 LSBs.
+        7.  Encode Secret File Extension
+                ->  Stores extension character by character in LSBs.
+        8.  Encode Secret File Size
+                ->  Determines file size (in bytes).
+                ->  Stores it using 32 LSBs.
+        9.  Encode Secret File Data
+                ->  Reads file byte-by-byte.
+                ->  Encodes each byte’s 8 bits into 8 image bytes’ LSBs.
+        10. Copy Remaining Image Data
+        11. return success.
 
-    v>.     search(...)
-                This function searches the MP3 file for a specific ID3v2 frame (e.g., TIT2 for title).It
-                Reads the frame ID, size, and skips flags.
-                Reads the content of the frame.
-                Compares the frame ID with the target and returns the content size if it matches, otherwise returns 0.
+5. decode.h
 
-    vi>.    print(...)
-                This helper function prints the tag content character by character (excluding the last byte which is usually a null terminator).
+    Defines:
+        ->  DecodeInfo struct → Stores:
+        ->  Input stego image filename & file pointer
+        ->  Output file name (with appended extension)
+        ->  Magic string
+        ->  Secret file extension & size
+        ->  Secret file size
 
-    vii>.   error_msg(...)
-                Displays a user-friendly error message showing correct usage syntax for both viewing and editing MP3 metadata.
-                It also explains what each command-line flag (-t, -a, etc.) stands for and exits the program on error.
+    Function prototypes for all decoding steps:
+            ->  Reading & validating arguments
+            ->  Opening files
+            ->  Skipping BMP header
+            ->  Decoding magic string length & data
+            ->  Decoding file extension length & extension
+            ->  Decoding file size
+            ->  Decoding file data (and writing to output file)
 
-// OUTPUT //
+6. decode.c
 
-./a.out -v sample.mp3 (view)
+    Implements all decoding steps:
+        i).     Argument Validation
+        ii).    Ensures input file is ".bmp".
+        iii).   Extracts output file name (or defaults to decoded_output).
+        iv).    File Handling
+        v).     Opens stego image for reading.
+        vi).    BMP Header Skipping
+        vii).   Skips the first 54 bytes (standard BMP header).
+        viii).  Decoding Functions
+                    ->  decode_size_from_lsb() → Reads 32 bits (4 bytes) hidden in LSBs to get lengths/sizes.
+                    ->  decode_byte_from_lsb() → Reads 8 bits (1 byte) hidden in LSBs.
+                    ->  decode_magic_string_len() → Reads length of magic string.
+                    ->  decode_magic_string() → Reads actual magic string and verifies with user input.
+                    ->  decode_secret_file_extn_len() → Reads length of secret file extension.
+                    ->  decode_secret_file_extn() → Reads extension, appends it to output file name.
+                    ->  decode_secret_file_size() → Reads size of hidden file.
+                    ->  decode_secret_file_data() → Extracts hidden bytes and writes to output file.
+                    
+        ix).    Decoding Orchestration
+                    ->  do_decoding() calls all the above functions in sequence:
+                            1.  Opens file
+                            2.  Skips BMP header
+                            3.  Decodes magic string 
+                            4.  Read magic string and verify with decoded ones.
+                            4.  Decodes file extension & size
+                            5.  Writes secret file content to disk
+                            6. return success.
 
-++------------++----------------------------------------------------++
-||            ||                                                    ||
-||    TAG     ||                    VALUE                           ||
-||            ||                                                    ||
-++------------++----------------------------------------------------++
-||            ||                                                    ||
-|| TITLE      || Sunnysunny                                         ||
-||            ||                                                    ||
-++------------++----------------------------------------------------++
-||            ||                                                    ||
-|| ARTIST     || Yo Yo Honey Singh - [SongsPk.CC]- [SongsPk.CC]     ||
-||            ||                                                    ||
-++------------++----------------------------------------------------++
-||            ||                                                    ||
-|| ALBUM      || Yaariyanney Singh - [SongsPk.CC]- [SongsPk.CC]     ||
-||            ||                                                    ||
-++------------++----------------------------------------------------++
-||            ||                                                    ||
-|| YEAR       || 2025iyanney Singh - [SongsPk.CC]- [SongsPk.CC]     ||
-||            ||                                                    ||
-++------------++----------------------------------------------------++
-||            ||                                                    ||
-|| CONTENT    || Bollywood song - [SongsPk.CC]CC]- [SongsPk.CC]     ||
-||            ||                                                    ||
-++------------++----------------------------------------------------++
+
+OUTPUT :-
+
+    ENCODE OUTPUT :-
+        ./a.out -e beautiful.bmp secret.txt                                         or 
+        ./a.out -e beautiful.bmp secret.txt stego.bmp                               or
+        ./a.out -e beautiful.bmp secret.txt stego                                   or
+
+        ./a.out -e beautiful.bmp secret.(extension like .txt, .c, .cpp, etc)
+
+                You have choosen encoding
+                .bmp is present
+                Secret file with extension '.txt' is present
+                No stego image name provided, using default stego.bmp
+
+                Enter a magic string (max 19 chars): #*
+                Magic string is stored.
+
+                Image capacity is sufficient.
+
+                Header is successfully stored...
+                Magic string length is successfully stored in stego.bmp...
+                Magic string is successfully stored in stego.bmp...
+                Secret file extension length is successfully stored in stego.bmp...
+                Secret file extension is successfully stored in stego.bmp...
+                Secret file size is successfully stored in stego.bmp...
+                Secret file data is successfully stored in stego.bmp...
+                Copy remaining image data is successfully stored in stego.bmp...
+
+                Encoding is successfully done....
+
+    DECODE OUTPUT :-
+        ./a.out -d stego.bmp                        or
+        ./a.out -d stego.bmp output                 or
+        ./a.out -d stego.bmp output.txt             or
+
+        ./a.out -d stego.bmp output.(extension like .txt, .c, .cpp, etc)
+        
+                You have choosen decoding.
+                .bmp is present.
+                Output file is present.
+
+                Skipping header successfully...
+                Magic string length is successfully decoded...
+                Magic string is successfully decoded...
+
+                Enter the magic string used during encoding: #*
+                Magic string verified. Proceeding with decoding...
+
+                Secret file extension length is successfully decoded...
+                Secret file extension is successfully decoded...
+                Secret file size is successfully decoded...
+                decoded Output file is successfully opened...
+                Secret file data is succesfully decoded...
+
+                Decoding is successfully done....
+
+
+**************************************************************************************************************************************************
